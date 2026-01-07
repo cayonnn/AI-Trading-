@@ -104,8 +104,10 @@ class AdvancedModelTrainer:
         # Engineer features
         df = self.feature_engineer.engineer_features(df)
         
-        # Create target
-        df['target'] = create_target(df, horizon=1, target_type='binary')
+        # Create target with PROFESSIONAL labeling
+        # horizon=5: Look ahead 5 bars (5 hours for H1 data)
+        # threshold=0.001: Require 0.1% minimum move (filters noise)
+        df['target'] = create_target(df, horizon=5, target_type='binary', threshold=0.001)
         df = df.dropna()
         
         logger.info(f"Features engineered: {len(self.feature_engineer.feature_names)}")
@@ -497,9 +499,8 @@ class AdvancedModelTrainer:
             if not self.selected_features:
                 features_path = f"{self.checkpoint_dir}/selected_features.json"
                 if os.path.exists(features_path):
-                    import json
                     with open(features_path, 'r') as f:
-                        data = json.load(f)
+                        data = json.load(f)  # Uses global json import
                     self.selected_features = data.get('selected_features', data) if isinstance(data, dict) else data
                     logger.info(f"Loaded {len(self.selected_features)} selected features from {features_path}")
                     

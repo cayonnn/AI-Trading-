@@ -1,35 +1,45 @@
 {
-  "timestamp": "2026-01-07T13:49:37.563651",
+  "timestamp": "2026-01-07T19:22:45.289541",
   "metrics": {
-    "lstm": {
-      "accuracy": 0.5867187843120032,
-      "precision": 0.5714771722120161,
-      "recall": 0.7296499000955607,
-      "f1": 0.6409493284493285
+    "xgboost": {
+      "accuracy": 0.774476822928044,
+      "precision": 0.6664117968323321,
+      "recall": 0.743208673407236,
+      "f1": 0.702718267680258
     }
   },
-  "best_params": {},
+  "best_params": {
+    "xgboost": {
+      "n_estimators": 500,
+      "max_depth": 6,
+      "learning_rate": 0.05,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "early_stopping_rounds": 50,
+      "scale_pos_weight": 2.238947176905816
+    }
+  },
   "n_features": 50,
   "selected_features": [
-    "returns",
-    "trend_10",
-    "cum_returns_2",
-    "price_position_5",
-    "close_zscore_10",
-    "macd_histogram_change",
     "hour",
+    "trend_10",
     "hour_sin",
-    "close_zscore_5",
-    "cum_returns_3",
-    "momentum_10",
-    "returns_skew_20",
-    "hour_cos",
-    "body_pct",
-    "roc_10",
-    "rsi_divergence",
-    "cum_returns_10",
+    "cum_returns_5",
     "trend_5",
-    "stoch_d_14",
+    "range_pct_lag_1",
+    "returns",
+    "range_pct_lag_2",
+    "range_pct",
+    "atr_pct_7",
+    "close_std_5",
+    "range_pct_lag_3",
+    "returns_kurt_20",
+    "range",
+    "roc_10",
+    "bb_lower_20",
+    "returns_lag_5",
+    "bb_width_20",
+    "cum_returns_2",
     "returns_skew_10"
   ]
 }

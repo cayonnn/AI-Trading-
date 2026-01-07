@@ -55,9 +55,9 @@ class UnifiedEnsemble:
     
     def __init__(
         self,
-        lstm_weight: float = 0.25,
-        xgb_weight: float = 0.40,
-        ppo_weight: float = 0.45,
+        lstm_weight: float = 0.35,  # 35% - Increased (good at trends)
+        xgb_weight: float = 0.30,   # 30% - Reduced (needs re-training)
+        ppo_weight: float = 0.45,   # 45% - RL agent (best for decisions)
         min_consensus: float = 0.66,  # 2/3 models agree
         min_confidence: float = 0.55,
     ):
@@ -142,19 +142,28 @@ class UnifiedEnsemble:
             action_key = min(action, 2)  # Clamp to 0, 1, 2
             vote_scores[action_key] += weight * conf
         
-        # Determine final action
-        final_action = 1 if vote_scores[1] > vote_scores[0] else 0
-        final_confidence = vote_scores[final_action]
+        # Determine final action - winner takes all
+        if vote_scores[1] > vote_scores[0]:
+            final_action = 1
+            final_confidence = vote_scores[1]
+        else:
+            final_action = 0
+            final_confidence = vote_scores[0]
         
-        # Count consensus
+        # Count consensus (how many models agree with final action)
         consensus_count = sum(1 for _, action, _ in predictions if action == final_action)
         consensus = consensus_count >= len(predictions) * self.min_consensus
         
-        # Boost/reduce confidence based on consensus
+        # Professional confidence adjustment
         if consensus:
-            final_confidence = min(0.95, final_confidence * 1.15)
+            # All 3 models agree - strong signal
+            final_confidence = min(0.90, final_confidence * 1.20)
+        elif consensus_count >= 2:
+            # 2 of 3 models agree - still good signal, light boost
+            final_confidence = min(0.85, final_confidence * 1.10)
         else:
-            final_confidence *= 0.85
+            # Models disagree - light penalty (not too harsh)
+            final_confidence *= 0.92
         
         # Determine action string
         if final_confidence < self.min_confidence:

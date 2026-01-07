@@ -44,9 +44,9 @@ class CorrectionResult:
 @dataclass
 class AdaptiveParameters:
     """Parameters ที่ปรับได้อัตโนมัติ"""
-    # Confidence thresholds
-    min_confidence: float = 0.60  # Lowered from 0.70
-    high_confidence: float = 0.85
+    # Confidence thresholds (lowered for calibrated confidence)
+    min_confidence: float = 0.50  # Lowered from 0.60 for calibrated confidence
+    high_confidence: float = 0.80
     
     # Position sizing
     base_position_pct: float = 0.02  # 2% of capital

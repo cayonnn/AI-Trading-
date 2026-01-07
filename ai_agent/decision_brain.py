@@ -60,9 +60,9 @@ class DecisionBrain:
     
     def __init__(
         self,
-        min_quality: float = 60.0,
-        min_rr: float = 1.9,  # Lowered from 2.0 for floating point safety
-        min_confidence: float = 0.60,  # Lowered from 0.65
+        min_quality: float = 45.0,  # Lowered from 60 to allow more trades
+        min_rr: float = 1.5,  # Lowered from 1.9 for Gold trading
+        min_confidence: float = 0.50,  # Lowered from 0.60
     ):
         self.min_quality = min_quality
         self.min_rr = min_rr
@@ -169,17 +169,21 @@ class DecisionBrain:
         bias_score = intel.get("bias_score", 0)
         trade_score = intel.get("trade_score", 0)
         
-        # Strong signals
-        if bias_score >= 1 and trade_score >= 0.5:
+        # Strong signals (lowered thresholds for more trades)
+        if bias_score >= 1 and trade_score >= 0.35:
             return 1
-        elif bias_score <= -1 and trade_score >= 0.5:
+        elif bias_score <= -1 and trade_score >= 0.35:
             return -1
         
-        # Medium signals
-        if bias_score > 0 and trade_score >= 0.4:
+        # Medium signals (lowered from 0.4 to 0.25)
+        if bias_score > 0 and trade_score >= 0.25:
             return 1
-        elif bias_score < 0 and trade_score >= 0.4:
+        elif bias_score < 0 and trade_score >= 0.25:
             return -1
+        
+        # Weak but valid signals
+        if abs(bias_score) >= 0.5 and trade_score >= 0.15:
+            return 1 if bias_score > 0 else -1
         
         return 0
     

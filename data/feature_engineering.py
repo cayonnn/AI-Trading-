@@ -440,28 +440,51 @@ class AdvancedFeatureEngineer:
 
 def create_target(
     df: pd.DataFrame, 
-    horizon: int = 1,
+    horizon: int = 5,  # Look ahead 5 bars (5 hours for H1)
     target_type: str = 'binary',
-    threshold: float = 0.0
+    threshold: float = 0.001,  # 0.1% minimum move for LONG signal
+    use_max_return: bool = True  # Use max potential return within horizon
 ) -> pd.Series:
     """
-    Create target variable for ML.
+    Create professional target variable for ML.
+    
+    PRODUCTION-GRADE LABELING:
+    - Uses 5-bar horizon instead of 1 bar (captures real trends)
+    - Requires 0.1% minimum move (filters noise)
+    - Option to use max return within horizon (better for trading)
     
     Args:
         df: OHLCV DataFrame
-        horizon: Prediction horizon (bars ahead)
+        horizon: Prediction horizon (bars ahead) - default 5
         target_type: 'binary' (up/down) or 'regression' (returns)
-        threshold: Minimum return for positive class
+        threshold: Minimum return for positive class - default 0.1%
+        use_max_return: If True, use best return within horizon window
         
     Returns:
-        Target series
+        Target series (1=LONG opportunity, 0=WAIT/DOWN)
     """
-    future_returns = df['close'].shift(-horizon) / df['close'] - 1
-    
-    if target_type == 'binary':
-        target = (future_returns > threshold).astype(int)
+    if use_max_return and target_type == 'binary':
+        # Calculate max return within the next 'horizon' bars
+        # This better captures if price goes up at any point within horizon
+        future_highs = df['high'].shift(-1).rolling(window=horizon, min_periods=1).max()
+        max_returns = (future_highs.shift(1-horizon) / df['close']) - 1
+        
+        # Also calculate close-to-close return for confirmation
+        future_close = df['close'].shift(-horizon)
+        close_returns = (future_close / df['close']) - 1
+        
+        # Label = 1 if BOTH conditions met:
+        # 1. Max potential return >= threshold (opportunity existed)
+        # 2. Close return is positive (trend was bullish)
+        target = ((max_returns >= threshold) & (close_returns > 0)).astype(int)
     else:
-        target = future_returns
+        # Simple close-to-close return
+        future_returns = df['close'].shift(-horizon) / df['close'] - 1
+        
+        if target_type == 'binary':
+            target = (future_returns > threshold).astype(int)
+        else:
+            target = future_returns
     
     return target
 
