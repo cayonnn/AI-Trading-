@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-01-07T13:49:37.563651",
+  "metrics": {
+    "lstm": {
+      "accuracy": 0.5867187843120032,
+      "precision": 0.5714771722120161,
+      "recall": 0.7296499000955607,
+      "f1": 0.6409493284493285
+    }
+  },
+  "best_params": {},
+  "n_features": 50,
+  "selected_features": [
+    "returns",
+    "trend_10",
+    "cum_returns_2",
+    "price_position_5",
+    "close_zscore_10",
+    "macd_histogram_change",
+    "hour",
+    "hour_sin",
+    "close_zscore_5",
+    "cum_returns_3",
+    "momentum_10",
+    "returns_skew_20",
+    "hour_cos",
+    "body_pct",
+    "roc_10",
+    "rsi_divergence",
+    "cum_returns_10",
+    "trend_5",
+    "stoch_d_14",
+    "returns_skew_10"
+  ]
+}

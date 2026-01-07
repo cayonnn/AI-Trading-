@@ -1,0 +1,26 @@
+{
+  "versions": {
+    "v1.0.0": {
+      "version_id": "v1.0.0",
+      "created_at": "2026-01-04T10:15:16.370354",
+      "parent_version": null,
+      "config": {
+        "min_confidence": 0.7,
+        "max_volatility": 0.025,
+        "position_pct": 0.02,
+        "stop_atr": 1.5,
+        "target_atr": 3.0
+      },
+      "total_trades": 0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "sharpe_ratio": 0.0,
+      "total_pnl": 0.0,
+      "status": "active",
+      "generation": 0,
+      "mutations_applied": []
+    }
+  },
+  "active_version": "v1.0.0",
+  "evolution_history": []
+}

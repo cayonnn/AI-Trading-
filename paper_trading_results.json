@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-01-01T12:55:08.927697",
+  "initial_capital": 10000,
+  "final_equity": 10337.57545873148,
+  "total_return_pct": 0.03375754587314805,
+  "total_trades": 275,
+  "win_rate": 0.44,
+  "profit_factor": 1.0661298426245838,
+  "max_drawdown_pct": 0.10536267176301652,
+  "sharpe_ratio": 0.6397809668834845
+}

@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Data & Results
+*.csv
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+results/
+logs/
+*.log
+
+# ML Models
+models/*.h5
+models/*.pkl
+models/*.joblib
+*.weights.h5
+
+# Configuration (IMPORTANT - Contains credentials!)
+trading/config.py
+config.py
+*.env
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Windows reserved names
+nul

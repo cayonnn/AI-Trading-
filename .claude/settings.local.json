@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /b /s:*)",
+      "Bash(python:*)",
+      "Bash(cat:*)",
+      "Bash(dir /b \"backtest_3year_*\")",
+      "Bash(findstr:*)",
+      "Bash(ls:*)",
+      "Bash(dir /b:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout /t 15 /nobreak)"
+    ]
+  }
+}

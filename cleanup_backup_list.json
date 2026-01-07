@@ -1,0 +1,108 @@
+{
+  "timestamp": "2025-12-31",
+  "files_to_remove": {
+    "duplicate_docs": [
+      "mt5_connector.py.old",
+      "README_PRODUCTION.md",
+      "COMPLETE_SYSTEM_SUMMARY.md",
+      "QUICK_REFERENCE.md",
+      "PRODUCTION_DEPLOYMENT_GUIDE.md",
+      "SYSTEM_ARCHITECTURE.md"
+    ],
+    "analysis_debug_files": [
+      "analyze_drawdown.py",
+      "analyze_losing_trades.py",
+      "analyze_production_signals.py",
+      "analyze_quality.py",
+      "analyze_short_problem.py",
+      "analyze_signal_filtering.py",
+      "analyze_trades_quality.py",
+      "debug_signals.py",
+      "DEBUGGING_SUMMARY.md"
+    ],
+    "old_results_files": [
+      "elite_long_only_results.csv",
+      "elite_optimized_v2_results.csv",
+      "elite_signals.csv",
+      "elite_ultra_high_winrate_results.csv",
+      "ensemble_comparison.csv",
+      "ml_model_comparison.csv",
+      "parameter_optimization_results.csv",
+      "quarterly_performance.csv",
+      "yearly_performance.csv",
+      "production_signals.csv"
+    ],
+    "old_documentation": [
+      "ANALYSIS_AND_IMPROVEMENTS.md",
+      "ELITE_LONG_ONLY_ROADMAP.md",
+      "ELITE_LONG_ONLY_STRATEGY.md",
+      "FINAL_OPTIMIZATION_REPORT.md",
+      "FINAL_PRODUCTION_SUMMARY.md",
+      "IMPROVEMENTS_COMPLETED.md",
+      "OPTIMIZATION_RESULTS.md",
+      "OPTIMIZATION_SUMMARY.md",
+      "PAPER_TRADING_IMPLEMENTATION.md",
+      "VERSION_3_RESULTS.md",
+      "CHANGELOG.md",
+      "DEPLOY_NOW.md",
+      "mt5_integration_guide.md"
+    ],
+    "old_system_files": [
+      "advanced_ml_system.py",
+      "alternative_data_integrator.py",
+      "elite_strategy_v3_improved.py",
+      "elite_trading_bot.py",
+      "elite_long_only_backtest.py",
+      "elite_optimized_v2.py",
+      "ensemble_strategy_system.py",
+      "improve_winrate.py",
+      "ml_improvements.py",
+      "main.py",
+      "master_integration_system.py",
+      "production_system.py",
+      "realtime_regime_detector.py",
+      "risk_manager.py",
+      "run_master_system.bat",
+      "run_paper_trading.py",
+      "run_paper_trading_test.py",
+      "sentiment_analysis_system.py",
+      "signal_generator.py",
+      "test_all_components.py",
+      "test_deployment.py",
+      "train.py",
+      "walk_forward_validation.py",
+      "add_regime_detection.py",
+      "multi_timeframe_analyzer.py",
+      "mt5_trade_executor.py"
+    ],
+    "temp_data_files": [
+      "nul",
+      "best_ml_model.json",
+      "best_parameters_v3.json",
+      "bot_config.json",
+      "master_signal_output.json",
+      "mtf_analysis_example.json",
+      "optimization_params_v2.json",
+      "regime_adaptive_params.json",
+      "sentiment_analysis_example.json",
+      "validation_results.json"
+    ],
+    "test_databases": [
+      "demo_trading.db",
+      "test_integration.db",
+      "test_smoke.db",
+      "backup_trading_db_20251230_232352.db"
+    ]
+  },
+  "dirs_to_remove": [
+    "__pycache__",
+    "catboost_info",
+    "archive",
+    "analysis",
+    "backtesting",
+    "strategies",
+    "trading"
+  ],
+  "total_files": 78,
+  "total_dirs": 7
+}

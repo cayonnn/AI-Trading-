@@ -1,0 +1,164 @@
+# =============================================================================
+# Hybrid AI Trading System Configuration
+# Production-Grade Settings for XAU/USD
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Trading Configuration
+# -----------------------------------------------------------------------------
+trading:
+  symbol: "GC=F"                    # Gold Futures (Yahoo Finance symbol)
+  symbol_mt5: "XAUUSD"              # MetaTrader 5 symbol
+  timeframe: "1h"                   # Primary timeframe
+  lookback_days: 365                # 1 year (Yahoo Finance hourly limit)
+  
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+models:
+  lstm:
+    enabled: true
+    sequence_length: 30             # Shorter for less noise
+    hidden_size: 64                 # Smaller to prevent overfitting
+    num_layers: 2                   # Number of LSTM layers
+    dropout: 0.3                    # Higher dropout for regularization
+    bidirectional: true             # Use bidirectional LSTM
+    learning_rate: 0.0005           # Slower learning rate
+    epochs: 50
+    batch_size: 64
+    patience: 10                    # Early stopping patience
+    
+  cnn:
+    enabled: true
+    input_channels: 1
+    filters: [32, 64, 128]          # Conv layer filters
+    kernel_sizes: [3, 3, 3]         # Kernel sizes
+    pool_size: 2
+    dropout: 0.25
+    
+  xgboost:
+    enabled: true
+    n_estimators: 200               # Less trees, prevent overfitting
+    max_depth: 4                    # Shallower trees
+    learning_rate: 0.02             # Slower learning
+    subsample: 0.7
+    colsample_bytree: 0.7
+    min_child_weight: 5
+    gamma: 0.2
+    reg_alpha: 0.5
+    reg_lambda: 2.0
+    early_stopping_rounds: 30
+    
+  ensemble:
+    method: "weighted_voting"       # voting, weighted_voting, stacking
+    weights:
+      lstm: 0.4
+      cnn: 0.2
+      xgboost: 0.4
+
+# -----------------------------------------------------------------------------
+# Technical Indicators
+# -----------------------------------------------------------------------------
+indicators:
+  rsi:
+    periods: [7, 14, 21]
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  bollinger:
+    period: 20
+    std_dev: 2
+  ema:
+    periods: [9, 21, 50, 100, 200]
+  atr:
+    period: 14
+  adx:
+    period: 14
+  stochastic:
+    k_period: 14
+    d_period: 3
+
+# -----------------------------------------------------------------------------
+# Risk Management (CRITICAL)
+# -----------------------------------------------------------------------------
+risk:
+  max_risk_per_trade: 0.02          # 2% max risk per trade
+  max_daily_drawdown: 0.05          # 5% max daily drawdown
+  max_total_drawdown: 0.15          # 15% max total drawdown
+  max_positions: 3                  # Maximum concurrent positions
+  use_trailing_stop: true
+  trailing_stop_distance: 0.01     # 1% trailing stop
+  
+  # Position Sizing
+  position_sizing:
+    method: "kelly"                 # fixed, kelly, volatility
+    kelly_fraction: 0.25            # Quarter Kelly for safety
+    max_position_pct: 0.10          # Max 10% of capital per position
+
+# -----------------------------------------------------------------------------
+# Signal Generation
+# -----------------------------------------------------------------------------
+signals:
+  min_confidence: 0.65              # Minimum signal confidence
+  trend_confirmation: true          # Require trend confirmation
+  volume_filter: true               # Filter by volume
+  
+  # Entry conditions
+  entry:
+    rsi_oversold: 30
+    rsi_overbought: 70
+    require_macd_crossover: true
+    require_price_above_ema: true   # Price above EMA for long
+    
+  # Exit conditions
+  exit:
+    take_profit_ratio: 2.0          # Risk:Reward = 1:2
+    stop_loss_atr_multiplier: 1.5   # SL = 1.5 * ATR
+
+# -----------------------------------------------------------------------------
+# Backtesting Configuration
+# -----------------------------------------------------------------------------
+backtest:
+  initial_capital: 100000           # $100,000 starting capital
+  commission: 0.0001                # 1 pip commission
+  slippage: 0.0002                  # 2 pips slippage
+  walk_forward:
+    enabled: true
+    train_period: 180               # Days for training
+    test_period: 30                 # Days for testing
+    step: 30                        # Step size in days
+
+# -----------------------------------------------------------------------------
+# Data Sources
+# -----------------------------------------------------------------------------
+data:
+  source: "yfinance"                # yfinance, mt5, alphavantage
+  cache_enabled: true
+  cache_dir: "data/cache"
+  
+  # Correlated assets for analysis
+  correlated_assets:
+    - "DX-Y.NYB"                    # Dollar Index
+    - "^TNX"                        # 10Y Treasury Yield
+    - "^VIX"                        # VIX
+    - "CL=F"                        # Crude Oil
+    - "^GSPC"                       # S&P 500
+
+# -----------------------------------------------------------------------------
+# Logging & Monitoring
+# -----------------------------------------------------------------------------
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  log_trades: true
+  log_signals: true
+  
+# -----------------------------------------------------------------------------
+# Dashboard Configuration
+# -----------------------------------------------------------------------------
+dashboard:
+  port: 8501
+  refresh_interval: 60              # Seconds
+  show_live_trades: true
+  show_performance_metrics: true

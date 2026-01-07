@@ -1,0 +1,103 @@
+{
+  "timestamp": "2026-01-01T12:51:47.024235",
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "accuracy": 0.5859375,
+      "precision": 0.3781942078364566,
+      "recall": 0.4065934065934066,
+      "f1": 0.3918799646954987,
+      "auc": 0.5525254411658705,
+      "threshold": 0.3
+    },
+    {
+      "fold": 2,
+      "accuracy": 0.49939903846153844,
+      "precision": 0.3816091954022989,
+      "recall": 0.529505582137161,
+      "f1": 0.44355377421509684,
+      "auc": 0.5203176258345522,
+      "threshold": 0.3
+    },
+    {
+      "fold": 3,
+      "accuracy": 0.5594951923076923,
+      "precision": 0.3384615384615385,
+      "recall": 0.13559322033898305,
+      "f1": 0.1936193619361936,
+      "auc": 0.46521287012227985,
+      "threshold": 0.3
+    },
+    {
+      "fold": 4,
+      "accuracy": 0.6225961538461539,
+      "precision": 0.4034229828850856,
+      "recall": 0.3005464480874317,
+      "f1": 0.3444676409185804,
+      "auc": 0.520592679719343,
+      "threshold": 0.3
+    },
+    {
+      "fold": 5,
+      "accuracy": 0.5877403846153846,
+      "precision": 0.6684210526315789,
+      "recall": 0.16933333333333334,
+      "f1": 0.2702127659574468,
+      "auc": 0.5508913202042305,
+      "threshold": 0.3
+    }
+  ],
+  "average_metrics": {
+    "accuracy": 0.5710336538461538,
+    "precision": 0.43402179544339176,
+    "recall": 0.30831439809806316,
+    "f1": 0.32874670154456326,
+    "auc": 0.5219079874092551
+  },
+  "best_threshold": 0.3,
+  "selected_features": [
+    "close_min_20",
+    "atr_pct_14",
+    "hist_vol_10",
+    "close_max_5",
+    "keltner_width",
+    "close_min_5",
+    "close_max_10",
+    "bb_width_20",
+    "close_ma_50",
+    "momentum_20",
+    "atr_pct_21",
+    "bb_upper_20",
+    "returns_kurt_50",
+    "close_max_20",
+    "close_zscore_20",
+    "trend_50",
+    "close_ma_20",
+    "returns_std_10",
+    "macd_histogram",
+    "dow_sin",
+    "month",
+    "macd_signal",
+    "stoch_d_21",
+    "returns_std_50",
+    "close_std_20",
+    "price_position_20",
+    "volume_ma_50",
+    "returns_skew_50",
+    "close_min_50",
+    "hist_vol_20",
+    "close_zscore_50",
+    "returns_kurt_20",
+    "volume_ma_10",
+    "atr_21",
+    "close_ma_5",
+    "close_min_10",
+    "stoch_k_21",
+    "volume_ma_20",
+    "returns_skew_10",
+    "day_of_week"
+  ],
+  "n_features": 40,
+  "target_horizon": 12,
+  "min_return_threshold": 0.003
+}
