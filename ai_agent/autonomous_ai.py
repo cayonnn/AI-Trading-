@@ -69,6 +69,10 @@ from ai_agent.news_filter import NewsFilter, get_news_filter
 from ai_agent.telegram_alert import TelegramAlert, get_telegram
 from ai_agent.model_monitor import ModelMonitor, get_model_monitor
 
+# v3.4: Intelligence Enhancements
+from ai_agent.dynamic_thresholds import DynamicRegimeThresholds, create_dynamic_thresholds
+from ai_agent.sentiment_integration import SentimentIntegration, get_sentiment
+
 
 @dataclass
 class TradeDecision:
@@ -211,6 +215,11 @@ class AutonomousAI:
         self.telegram = get_telegram()  # Set token/chat_id via .env or config
         self.model_monitor = get_model_monitor()
         logger.info("✅ v3.3 modules: NewsFilter, Telegram, ModelMonitor")
+        
+        # v3.4: Intelligence Enhancements
+        self.dynamic_thresholds = create_dynamic_thresholds()
+        self.sentiment = get_sentiment()
+        logger.info("✅ v3.4 modules: DynamicRegimeThresholds, SentimentIntegration")
         
         # State
         self.current_position = 0  # 0 = flat, 1 = long
@@ -375,6 +384,43 @@ class AutonomousAI:
         if not is_good_hour:
             logger.debug(f"⏰ {hour_reason}")
             # Don't block, just reduce confidence later
+        
+        # ============================================
+        # v3.4: Dynamic Thresholds & Sentiment Check
+        # ============================================
+        
+        # Get regime-specific thresholds
+        regime_thresholds = self.dynamic_thresholds.get_thresholds(
+            regime=market.regime,
+            volatility=market.volatility,
+        )
+        
+        if not regime_thresholds["can_trade"]:
+            logger.debug(f"📊 {regime_thresholds['reason']}")
+            return TradeDecision(
+                action='WAIT', confidence=0.0,
+                position_size=0, stop_loss=0, take_profit=0,
+                reason=regime_thresholds['reason'],
+                regime=market.regime,
+            )
+        
+        # Analyze market sentiment
+        sentiment_data = {
+            "trend": market.trend,
+            "momentum": market.momentum,
+            "volatility": market.volatility,
+            "regime": market.regime,
+        }
+        sentiment_summary = self.sentiment.analyze(sentiment_data)
+        
+        if sentiment_summary.should_avoid:
+            logger.info(f"⚠️ Sentiment: {sentiment_summary.avoid_reason}")
+            return TradeDecision(
+                action='WAIT', confidence=0.0,
+                position_size=0, stop_loss=0, take_profit=0,
+                reason=f"Sentiment: {sentiment_summary.avoid_reason}",
+                regime=market.regime,
+            )
         
         # 2. Get ADVANCED Market Intelligence
         intel_analysis = self.market_intel.analyze(data)
