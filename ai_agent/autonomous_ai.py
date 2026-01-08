@@ -482,13 +482,32 @@ class AutonomousAI:
         # Master thinks and decides
         master_thought = self.master_brain.think(master_market, model_votes, master_indicators)
         
-        # Use Master's decision if override, otherwise use ensemble
-        if master_thought.override_models:
-            action = 1 if master_thought.suggested_action == "LONG" else 0
+        # v3.4: Master's decision has priority when confident
+        # Use Master's decision if:
+        # 1. Master explicitly overrides, OR
+        # 2. Master decides LONG/SHORT with confidence > 55%
+        use_master_decision = (
+            master_thought.override_models or
+            (master_thought.suggested_action in ["LONG", "SHORT"] and master_thought.confidence >= 0.55)
+        )
+        
+        if use_master_decision:
+            if master_thought.suggested_action == "LONG":
+                action = 1
+            elif master_thought.suggested_action == "SHORT":
+                action = 2
+            else:
+                action = 0
             ai_confidence = master_thought.confidence
-            logger.info(f"🧠 MASTER OVERRIDE: {master_thought.suggested_action} ({master_thought.confidence:.0%})")
+            logger.info(f"🧠 MASTER DECISION: {master_thought.suggested_action} ({master_thought.confidence:.0%})")
         else:
-            action = 1 if ensemble_result.action == "LONG" else 0
+            # Fallback to ensemble
+            if ensemble_result.action == "LONG":
+                action = 1
+            elif ensemble_result.action == "SHORT":
+                action = 2
+            else:
+                action = 0
             ai_confidence = ensemble_result.confidence
         
         logger.debug(f"Ensemble: {ensemble_result.reasoning}")
