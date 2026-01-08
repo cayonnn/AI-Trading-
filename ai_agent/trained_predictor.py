@@ -230,12 +230,30 @@ class TrainedModelPredictor:
                 pred = self.lstm_model.predict(X)
                 pred_class = int(pred[0])
                 
-                # Get probabilities if available
+                # Get raw probability for confidence
                 if hasattr(self.lstm_model, 'predict_proba'):
                     probs = self.lstm_model.predict_proba(X)
-                    confidence = float(probs.max())
+                    
+                    # v3.4: Calculate realistic confidence
+                    if probs.ndim == 2:
+                        # For binary: get prob of predicted class
+                        if probs.shape[1] >= 2:
+                            raw_prob = float(probs[0, pred_class])
+                        else:
+                            raw_prob = float(probs[0, 0])
+                    else:
+                        raw_prob = float(probs[0]) if pred_class == 1 else 1.0 - float(probs[0])
+                    
+                    # Calibrate confidence: [0.5, 1.0] → [0.50, 0.85]
+                    # ไม่ให้เกิน 85% เพื่อความสมจริง
+                    if raw_prob >= 0.5:
+                        confidence = 0.50 + (raw_prob - 0.5) * 0.7
+                    else:
+                        confidence = 0.50
+                    
+                    confidence = min(0.85, max(0.30, confidence))
                 else:
-                    confidence = 0.6  # Default
+                    confidence = 0.55  # Default
             
             return pred_class, confidence
             
