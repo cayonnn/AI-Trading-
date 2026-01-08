@@ -574,6 +574,7 @@ class AutonomousAI:
             action=action,
         )
         
+        # LONG decision
         if final_confidence >= optimal_threshold and action == 1:
             return TradeDecision(
                 action="LONG",
@@ -581,6 +582,25 @@ class AutonomousAI:
                 position_size=position_value,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
+                reason=thinking,
+                risk_pct=risk_params.risk_pct,
+                reward_ratio=reward_ratio,
+                regime=market.regime,
+                strategy_version=self.evolution_engine.active_version or "default",
+            )
+        
+        # SHORT decision (action == 2)
+        if final_confidence >= optimal_threshold and action == 2:
+            # For SHORT: swap SL and TP direction
+            short_sl = market.price + abs(market.price - stop_loss)
+            short_tp = market.price - abs(take_profit - market.price)
+            
+            return TradeDecision(
+                action="SHORT",
+                confidence=final_confidence,
+                position_size=position_value,
+                stop_loss=short_sl,
+                take_profit=short_tp,
                 reason=thinking,
                 risk_pct=risk_params.risk_pct,
                 reward_ratio=reward_ratio,

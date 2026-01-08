@@ -23,6 +23,14 @@ from dataclasses import dataclass
 from loguru import logger
 import time
 
+# Import Telegram Alert
+try:
+    from ai_agent.telegram_alert import get_telegram, TelegramAlert
+    TELEGRAM_AVAILABLE = True
+except ImportError:
+    TELEGRAM_AVAILABLE = False
+    logger.warning("TelegramAlert ไม่พร้อมใช้งาน")
+
 
 @dataclass
 class TradeResult:
@@ -46,24 +54,44 @@ class MT5TradeExecutor:
     risk management and execution quality monitoring
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, master_brain=None):
         """
         Initialize trade executor
 
         Args:
             config: Configuration manager (optional)
+            master_brain: MasterBrain instance for learning (optional)
         """
         self.config = config
         self.max_slippage = 50  # Maximum allowed slippage in points
         self.max_retries = 3
         self.retry_delay = 1.0  # seconds
+        
+        # Telegram Alert
+        self.telegram = get_telegram() if TELEGRAM_AVAILABLE else None
+        
+        # MasterBrain for learning
+        self.master_brain = master_brain
+        
+        # Track positions for SL/TP detection
+        self._tracked_positions: Dict[int, Dict] = {}
+        
+        # Track market state for learning
+        self._position_market_states: Dict[int, Dict] = {}
 
         logger.info("="*70)
-        logger.info("  ELITE MT5 TRADE EXECUTOR v2.0.0")
+        logger.info("  ELITE MT5 TRADE EXECUTOR v2.1.0")
         logger.info("="*70)
         logger.info(f"  Max Slippage: {self.max_slippage} points")
         logger.info(f"  Max Retries: {self.max_retries}")
+        logger.info(f"  Telegram: {'เปิด' if self.telegram and self.telegram.enabled else 'ปิด'}")
+        logger.info(f"  MasterBrain Learning: {'เปิด' if self.master_brain else 'ปิด'}")
         logger.info("="*70)
+    
+    def set_master_brain(self, master_brain):
+        """ตั้งค่า MasterBrain สำหรับ learning"""
+        self.master_brain = master_brain
+        logger.info("MasterBrain connected for auto-learning")
 
     def execute_market_order(
         self,
@@ -633,6 +661,337 @@ class MT5TradeExecutor:
             })
 
         return result
+    
+    # ============================================
+    # Position Tracking & SL/TP Detection
+    # ============================================
+    
+    def track_position(
+        self,
+        ticket: int,
+        symbol: str,
+        direction: str,
+        entry_price: float,
+        volume: float,
+        sl: float,
+        tp: float,
+    ):
+        """
+        เริ่มติดตาม Position เพื่อตรวจจับ SL/TP
+        
+        Args:
+            ticket: หมายเลข ticket
+            symbol: สัญลักษณ์
+            direction: BUY หรือ SELL
+            entry_price: ราคาเข้า
+            volume: Lot size
+            sl: Stop Loss
+            tp: Take Profit
+        """
+        self._tracked_positions[ticket] = {
+            'symbol': symbol,
+            'direction': direction,
+            'entry_price': entry_price,
+            'volume': volume,
+            'sl': sl,
+            'tp': tp,
+            'time_opened': datetime.now(),
+        }
+        logger.info(f"เริ่มติดตาม Position #{ticket}")
+    
+    def check_closed_positions_and_notify(self) -> List[Dict]:
+        """
+        ตรวจสอบ Positions ที่ถูกปิดและส่ง Telegram แจ้งเตือน
+        
+        Returns:
+            รายการ positions ที่ถูกปิด
+        """
+        if not self._tracked_positions:
+            return []
+        
+        closed_positions = []
+        current_tickets = set()
+        
+        # ดึง positions ปัจจุบัน
+        positions = mt5.positions_get()
+        if positions:
+            current_tickets = {pos.ticket for pos in positions}
+        
+        # ตรวจสอบว่า position ไหนถูกปิด
+        for ticket, info in list(self._tracked_positions.items()):
+            if ticket not in current_tickets:
+                # Position ถูกปิดแล้ว!
+                closed_info = self._get_closed_position_details(ticket, info)
+                
+                if closed_info:
+                    closed_positions.append(closed_info)
+                    self._send_close_notification(closed_info)
+                
+                # ลบออกจาก tracking
+                del self._tracked_positions[ticket]
+        
+        return closed_positions
+    
+    def _get_closed_position_details(self, ticket: int, tracked_info: Dict) -> Optional[Dict]:
+        """ดึงรายละเอียดของ position ที่ถูกปิด"""
+        try:
+            # ดึงจาก history
+            from_date = tracked_info.get('time_opened', datetime.now())
+            deals = mt5.history_deals_get(
+                from_date,
+                datetime.now(),
+                position=ticket
+            )
+            
+            if not deals:
+                return None
+            
+            # หา deal ปิด (ที่ไม่ใช่ entry)
+            close_deal = None
+            for deal in deals:
+                if deal.entry == 1:  # Entry out = ปิด position
+                    close_deal = deal
+                    break
+            
+            if not close_deal:
+                return None
+            
+            # คำนวณข้อมูล
+            entry_price = tracked_info['entry_price']
+            exit_price = close_deal.price
+            pnl = close_deal.profit
+            sl = tracked_info['sl']
+            tp = tracked_info['tp']
+            direction = tracked_info['direction']
+            
+            # ตรวจสอบว่าโดน SL หรือ TP หรือปิดปกติ
+            close_reason = self._detect_close_reason(
+                direction, entry_price, exit_price, sl, tp, close_deal.comment
+            )
+            
+            return {
+                'ticket': ticket,
+                'symbol': tracked_info['symbol'],
+                'direction': direction,
+                'entry_price': entry_price,
+                'exit_price': exit_price,
+                'volume': tracked_info['volume'],
+                'pnl': pnl,
+                'sl': sl,
+                'tp': tp,
+                'close_reason': close_reason,
+                'close_time': datetime.now(),
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting closed position details: {e}")
+            return None
+    
+    def _detect_close_reason(
+        self,
+        direction: str,
+        entry_price: float,
+        exit_price: float,
+        sl: float,
+        tp: float,
+        comment: str = ""
+    ) -> str:
+        """ตรวจจับเหตุผลปิด Position"""
+        # ตรวจสอบจาก comment ก่อน
+        comment_lower = comment.lower() if comment else ""
+        if "sl" in comment_lower or "stop" in comment_lower:
+            return "sl"
+        if "tp" in comment_lower or "profit" in comment_lower:
+            return "tp"
+        if "trailing" in comment_lower:
+            return "trailing_stop"
+        
+        # ตรวจสอบจากราคา
+        tolerance = 0.5  # tolerance in price units
+        
+        if sl and abs(exit_price - sl) < tolerance:
+            return "sl"
+        if tp and abs(exit_price - tp) < tolerance:
+            return "tp"
+        
+        # ตรวจสอบจากทิศทางและกำไร/ขาดทุน
+        if direction in ["BUY", "LONG"]:
+            if exit_price <= sl if sl else exit_price < entry_price * 0.99:
+                return "sl"
+            if tp and exit_price >= tp:
+                return "tp"
+        else:  # SELL/SHORT
+            if sl and exit_price >= sl:
+                return "sl"
+            if tp and exit_price <= tp:
+                return "tp"
+        
+        return "manual"
+    
+    def _send_close_notification(self, close_info: Dict):
+        """ส่ง Telegram แจ้งเตือนเมื่อปิด Position"""
+        if not self.telegram or not self.telegram.enabled:
+            return
+        
+        reason = close_info['close_reason']
+        
+        try:
+            if reason == "sl":
+                self.telegram.alert_sl_hit(
+                    symbol=close_info['symbol'],
+                    direction=close_info['direction'],
+                    entry_price=close_info['entry_price'],
+                    sl_price=close_info['exit_price'],
+                    pnl=close_info['pnl'],
+                    ticket=close_info['ticket'],
+                    lot=close_info['volume'],
+                )
+                logger.info(f"📱 ส่ง Telegram แจ้งเตือน SL สำหรับ #{close_info['ticket']}")
+                
+            elif reason == "tp":
+                self.telegram.alert_tp_hit(
+                    symbol=close_info['symbol'],
+                    direction=close_info['direction'],
+                    entry_price=close_info['entry_price'],
+                    tp_price=close_info['exit_price'],
+                    pnl=close_info['pnl'],
+                    ticket=close_info['ticket'],
+                    lot=close_info['volume'],
+                )
+                logger.info(f"📱 ส่ง Telegram แจ้งเตือน TP สำหรับ #{close_info['ticket']}")
+                
+            elif reason == "trailing_stop":
+                self.telegram.alert_trailing_stop(
+                    symbol=close_info['symbol'],
+                    direction=close_info['direction'],
+                    entry_price=close_info['entry_price'],
+                    ts_price=close_info['exit_price'],
+                    pnl=close_info['pnl'],
+                    ticket=close_info['ticket'],
+                )
+                logger.info(f"📱 ส่ง Telegram แจ้งเตือน Trailing Stop สำหรับ #{close_info['ticket']}")
+                
+            else:
+                # ปิดปกติ
+                self.telegram.alert_trade_exit(
+                    symbol=close_info['symbol'],
+                    direction=close_info['direction'],
+                    entry_price=close_info['entry_price'],
+                    exit_price=close_info['exit_price'],
+                    pnl=close_info['pnl'],
+                    reason=reason,
+                    ticket=close_info['ticket'],
+                    lot=close_info['volume'],
+                )
+                logger.info(f"📱 ส่ง Telegram แจ้งเตือนปิดออเดอร์สำหรับ #{close_info['ticket']}")
+                
+        except Exception as e:
+            logger.error(f"Error sending Telegram notification: {e}")
+        
+        # ============================================
+        # Auto-record to MasterBrain for learning
+        # ============================================
+        self._auto_record_to_master_brain(close_info)
+    
+    def _auto_record_to_master_brain(self, close_info: Dict):
+        """
+        บันทึกผล trade ไปยัง MasterBrain อัตโนมัติ
+        
+        ทำให้ MasterBrain เรียนรู้จากทุก trade โดยอัตโนมัติ
+        """
+        if not self.master_brain:
+            return
+        
+        ticket = close_info['ticket']
+        pnl = close_info['pnl']
+        is_win = pnl > 0
+        
+        # Get market state when position was opened
+        market_state = self._position_market_states.get(ticket, {})
+        if not market_state:
+            # Default market state if not tracked
+            market_state = {
+                'regime': 'unknown',
+                'volatility': 0.0,
+                'trend': 0.0,
+                'price': close_info['entry_price'],
+            }
+        
+        # Determine action
+        action = "LONG" if close_info['direction'] in ["BUY", "LONG"] else "SHORT"
+        result = "win" if is_win else "loss"
+        
+        try:
+            # Record to MasterBrain's trade result
+            self.master_brain.record_trade_result(
+                market_state=market_state,
+                action=action,
+                result=result,
+                pnl=pnl,
+                ticket=ticket,
+            )
+            
+            # Record for intelligence learning
+            if hasattr(self.master_brain, 'record_trade_for_learning'):
+                current_hour = datetime.now().hour
+                self.master_brain.record_trade_for_learning(
+                    regime=market_state.get('regime', 'unknown'),
+                    volatility=market_state.get('volatility', 0.0),
+                    hour=current_hour,
+                    is_win=is_win,
+                    pnl=pnl,
+                )
+            
+            logger.info(f"🧠 Auto-recorded trade #{ticket} to MasterBrain: {result} ${pnl:.2f}")
+            
+            # Clean up market state
+            if ticket in self._position_market_states:
+                del self._position_market_states[ticket]
+                
+        except Exception as e:
+            logger.error(f"Error recording to MasterBrain: {e}")
+    
+    def record_market_state_for_position(self, ticket: int, market_state: Dict):
+        """
+        บันทึก market state สำหรับ position ที่เปิด
+        
+        เรียกฟังก์ชันนี้เมื่อเปิด position ใหม่
+        """
+        self._position_market_states[ticket] = {
+            **market_state,
+            'open_time': datetime.now(),
+        }
+        logger.debug(f"Recorded market state for position #{ticket}")
+    
+    def send_entry_notification(
+        self,
+        symbol: str,
+        direction: str,
+        price: float,
+        volume: float,
+        sl: float,
+        tp: float,
+        confidence: float,
+        ticket: int = None,
+    ):
+        """ส่ง Telegram แจ้งเตือนเปิดออเดอร์"""
+        if not self.telegram or not self.telegram.enabled:
+            return
+        
+        try:
+            self.telegram.alert_trade_entry(
+                symbol=symbol,
+                direction=direction,
+                price=price,
+                lot=volume,
+                sl=sl,
+                tp=tp,
+                confidence=confidence,
+                ticket=ticket,
+            )
+            logger.info(f"📱 ส่ง Telegram แจ้งเตือนเปิดออเดอร์สำหรับ #{ticket}")
+        except Exception as e:
+            logger.error(f"Error sending entry notification: {e}")
 
 
 # Quick test
@@ -647,6 +1006,7 @@ if __name__ == "__main__":
     print("  ✓ Smart order routing")
     print("  ✓ Slippage tracking")
     print("  ✓ Execution quality monitoring")
+    print("  ✓ Telegram แจ้งเตือนภาษาไทย (SL/TP/Entry/Exit)")
     print("\nUsage:")
     print("  from mt5_trade_executor import MT5TradeExecutor")
     print("  executor = MT5TradeExecutor()")

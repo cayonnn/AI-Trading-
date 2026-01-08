@@ -253,16 +253,23 @@ class XGBoostModel:
             Dictionary of metrics
         """
         if self.task == 'classification':
+            # Check if multiclass
+            n_classes = len(np.unique(y_true))
+            avg = 'macro' if n_classes > 2 else 'binary'
+            
             metrics = {
                 'accuracy': accuracy_score(y_true, y_pred),
-                'precision': precision_score(y_true, y_pred, zero_division=0),
-                'recall': recall_score(y_true, y_pred, zero_division=0),
-                'f1': f1_score(y_true, y_pred, zero_division=0)
+                'precision': precision_score(y_true, y_pred, zero_division=0, average=avg),
+                'recall': recall_score(y_true, y_pred, zero_division=0, average=avg),
+                'f1': f1_score(y_true, y_pred, zero_division=0, average=avg)
             }
             
             if y_proba is not None:
                 try:
-                    metrics['auc'] = roc_auc_score(y_true, y_proba)
+                    if n_classes > 2:
+                        metrics['auc'] = roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro')
+                    else:
+                        metrics['auc'] = roc_auc_score(y_true, y_proba)
                 except ValueError:
                     metrics['auc'] = 0.5
         else:

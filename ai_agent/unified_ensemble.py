@@ -132,8 +132,8 @@ class UnifiedEnsemble:
         total_weight = sum(weights)
         weights = [w / total_weight for w in weights]
         
-        # Weighted voting
-        vote_scores = {0: 0.0, 1: 0.0, 2: 0.0}  # 0=wait, 1=long, 2=short
+        # Weighted voting for 3 classes
+        vote_scores = {0: 0.0, 1: 0.0, 2: 0.0}  # 0=WAIT, 1=LONG, 2=SHORT
         
         for (name, action, conf), weight in zip(predictions, weights):
             # Handle action values
@@ -142,13 +142,9 @@ class UnifiedEnsemble:
             action_key = min(action, 2)  # Clamp to 0, 1, 2
             vote_scores[action_key] += weight * conf
         
-        # Determine final action - winner takes all
-        if vote_scores[1] > vote_scores[0]:
-            final_action = 1
-            final_confidence = vote_scores[1]
-        else:
-            final_action = 0
-            final_confidence = vote_scores[0]
+        # Determine final action - winner takes all (among 3 classes)
+        final_action = max(vote_scores, key=vote_scores.get)
+        final_confidence = vote_scores[final_action]
         
         # Count consensus (how many models agree with final action)
         consensus_count = sum(1 for _, action, _ in predictions if action == final_action)
@@ -165,15 +161,18 @@ class UnifiedEnsemble:
             # Models disagree - light penalty (not too harsh)
             final_confidence *= 0.92
         
-        # Determine action string
+        # Determine action string (now supports LONG, SHORT, and WAIT)
         if final_confidence < self.min_confidence:
             action_str = "WAIT"
             direction = 0
         elif final_action == 1:
             action_str = "LONG"
             direction = 1
+        elif final_action == 2:
+            action_str = "SHORT"  # Enabled SHORT trading!
+            direction = -1
         else:
-            action_str = "WAIT"  # No short for now
+            action_str = "WAIT"
             direction = 0
         
         # Generate reasoning

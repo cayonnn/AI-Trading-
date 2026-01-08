@@ -409,6 +409,23 @@ class AutonomousMT5Trader:
                 result["entry_price"] = exec_result["price"]
                 result["lot"] = lot
         
+        # SHORT/SELL order
+        elif decision.action == "SHORT" and self.paper_position == 0:
+            lot = self._calculate_lot_size(decision)
+            
+            exec_result = self.open_trade(
+                "SELL",
+                lot,
+                decision.stop_loss,
+                decision.take_profit,
+            )
+            
+            if exec_result["success"]:
+                self.trade_count += 1
+                result["executed"] = True
+                result["entry_price"] = exec_result["price"]
+                result["lot"] = lot
+        
         elif decision.action == "CLOSE" and self.paper_position != 0:
             exec_result = self.close_trade()
             

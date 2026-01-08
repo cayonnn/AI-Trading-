@@ -428,9 +428,17 @@ class LSTMPredictor:
                     loss = self.criterion(outputs, batch_y)
                     probs = outputs
                 
+                # Check for NaN/Inf loss (prevents exploding gradients)
+                if torch.isnan(loss) or torch.isinf(loss):
+                    logger.warning(f"NaN/Inf loss detected, skipping batch")
+                    continue
+                
                 # Backward pass
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                
+                # Strong gradient clipping to prevent explosion
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                
                 self.optimizer.step()
                 
                 train_loss += loss.item() * batch_X.size(0)

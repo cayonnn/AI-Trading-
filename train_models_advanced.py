@@ -104,10 +104,9 @@ class AdvancedModelTrainer:
         # Engineer features
         df = self.feature_engineer.engineer_features(df)
         
-        # Create target with PROFESSIONAL labeling
-        # horizon=5: Look ahead 5 bars (5 hours for H1 data)
-        # threshold=0.001: Require 0.1% minimum move (filters noise)
-        df['target'] = create_target(df, horizon=5, target_type='binary', threshold=0.001)
+        # Create target with MULTICLASS labeling (3 classes)
+        # 0=WAIT, 1=LONG, 2=SHORT
+        df['target'] = create_target(df, horizon=5, target_type='multiclass', threshold=0.001)
         df = df.dropna()
         
         logger.info(f"Features engineered: {len(self.feature_engineer.feature_names)}")
@@ -175,14 +174,19 @@ class AdvancedModelTrainer:
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(X_train[:1000])  # Sample for speed
         
-        # Get feature importance
+        # Get feature importance (handle multiclass)
         if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # For binary classification
-        importance = np.abs(shap_values).mean(axis=0)
+            # Multiclass: average SHAP values across all classes
+            importance = np.mean([np.abs(sv).mean(axis=0) for sv in shap_values], axis=0)
+        elif len(shap_values.shape) == 3:
+            # Shape (n_samples, n_features, n_classes) - average across classes
+            importance = np.abs(shap_values).mean(axis=(0, 2))
+        else:
+            importance = np.abs(shap_values).mean(axis=0)
         
         # Select top features
         indices = np.argsort(importance)[::-1][:top_n]
-        selected = [feature_names[i] for i in indices]
+        selected = [feature_names[int(i)] for i in indices]  # Convert to int explicitly
         
         logger.info(f"Selected {len(selected)} features")
         logger.info(f"Top 10: {selected[:10]}")
@@ -236,17 +240,24 @@ class AdvancedModelTrainer:
         y_pred: np.ndarray,
         y_proba: np.ndarray = None
     ) -> Dict:
-        """Calculate comprehensive metrics"""
+        """Calculate comprehensive metrics (supports multiclass)"""
+        # Check if multiclass
+        n_classes = len(np.unique(y_true))
+        avg = 'macro' if n_classes > 2 else 'binary'
+        
         metrics = {
             'accuracy': accuracy_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred, zero_division=0),
-            'recall': recall_score(y_true, y_pred, zero_division=0),
-            'f1': f1_score(y_true, y_pred, zero_division=0),
+            'precision': precision_score(y_true, y_pred, zero_division=0, average=avg),
+            'recall': recall_score(y_true, y_pred, zero_division=0, average=avg),
+            'f1': f1_score(y_true, y_pred, zero_division=0, average=avg),
         }
         
         if y_proba is not None:
             try:
-                metrics['auc'] = roc_auc_score(y_true, y_proba)
+                if n_classes > 2:
+                    metrics['auc'] = roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro')
+                else:
+                    metrics['auc'] = roc_auc_score(y_true, y_proba)
             except:
                 metrics['auc'] = 0.5
         
@@ -287,16 +298,15 @@ class AdvancedModelTrainer:
         else:
             self.selected_features = feature_cols
         
-        # Handle class imbalance
-        n_pos = y_train.sum()
-        n_neg = len(y_train) - n_pos
-        scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
+        # Count class distribution for multiclass
+        unique, counts = np.unique(y_train, return_counts=True)
+        class_dist = dict(zip(unique, counts))
+        logger.info(f"Class distribution: {class_dist}")
         
         # Optimize hyperparameters
         if optimize and self.use_optuna:
             best_params = self.optimize_xgboost(X_train, y_train, X_val, y_val)
             best_params['early_stopping_rounds'] = 50
-            best_params['scale_pos_weight'] = scale_pos_weight
         else:
             best_params = {
                 'n_estimators': 500,
@@ -305,13 +315,16 @@ class AdvancedModelTrainer:
                 'subsample': 0.8,
                 'colsample_bytree': 0.8,
                 'early_stopping_rounds': 50,
-                'scale_pos_weight': scale_pos_weight
+                # Multiclass settings
+                'objective': 'multi:softprob',
+                'num_class': 3,  # WAIT(0), LONG(1), SHORT(2)
+                'eval_metric': 'mlogloss',
             }
         
         self.best_params['xgboost'] = best_params
         
         # Train final model
-        logger.info("\nTraining final XGBoost model...")
+        logger.info("\nTraining final XGBoost model (multiclass)...")
         model = XGBoostModel(
             task='classification',
             params=best_params,
@@ -398,10 +411,29 @@ class AdvancedModelTrainer:
         logger.info(f"LSTM shapes - Train: {X_train.shape}, Val: {X_val.shape}, Test: {X_test.shape}")
         
         # Handle class imbalance
-        n_pos = y_train.sum()
+        # pos_weight should be > 1 to upweight minority class
+        n_pos = int(y_train.sum())
         n_neg = len(y_train) - n_pos
-        class_weight = n_neg / n_pos if n_pos > 0 else 1.0
-        logger.info(f"Class weight: {class_weight:.2f}")
+        
+        # Correct formula: if minority class is 1, weight = n_neg/n_pos
+        # If minority class is 0, we don't need pos_weight (or use inverse)
+        if n_pos > 0 and n_neg > 0:
+            # pos_weight > 1 upweights positive class
+            # pos_weight < 1 downweights positive class
+            if n_pos < n_neg:
+                # Class 1 is minority - upweight it
+                class_weight = n_neg / n_pos
+            else:
+                # Class 0 is minority - use balanced weight
+                class_weight = 1.0
+            
+            # Safety: clip to reasonable range to prevent numerical instability
+            class_weight = min(max(class_weight, 0.5), 10.0)
+        else:
+            class_weight = 1.0
+            
+        logger.info(f"Class distribution: pos={n_pos}, neg={n_neg}")
+        logger.info(f"Class weight (pos_weight): {class_weight:.4f}")
         
         # Train LSTM v2.0 with Multi-Head Attention
         model = LSTMPredictor(

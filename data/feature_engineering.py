@@ -441,8 +441,8 @@ class AdvancedFeatureEngineer:
 def create_target(
     df: pd.DataFrame, 
     horizon: int = 5,  # Look ahead 5 bars (5 hours for H1)
-    target_type: str = 'binary',
-    threshold: float = 0.001,  # 0.1% minimum move for LONG signal
+    target_type: str = 'binary',  # 'binary' or 'multiclass' or 'regression'
+    threshold: float = 0.001,  # 0.1% minimum move for signal
     use_max_return: bool = True  # Use max potential return within horizon
 ) -> pd.Series:
     """
@@ -451,40 +451,59 @@ def create_target(
     PRODUCTION-GRADE LABELING:
     - Uses 5-bar horizon instead of 1 bar (captures real trends)
     - Requires 0.1% minimum move (filters noise)
-    - Option to use max return within horizon (better for trading)
+    - Supports 3-class: WAIT(0), LONG(1), SHORT(2)
     
     Args:
         df: OHLCV DataFrame
         horizon: Prediction horizon (bars ahead) - default 5
-        target_type: 'binary' (up/down) or 'regression' (returns)
-        threshold: Minimum return for positive class - default 0.1%
+        target_type: 'binary', 'multiclass', or 'regression'
+        threshold: Minimum return for signal - default 0.1%
         use_max_return: If True, use best return within horizon window
         
     Returns:
-        Target series (1=LONG opportunity, 0=WAIT/DOWN)
+        Target series:
+        - binary: 1=LONG, 0=WAIT
+        - multiclass: 0=WAIT, 1=LONG, 2=SHORT
+        - regression: actual returns
     """
-    if use_max_return and target_type == 'binary':
-        # Calculate max return within the next 'horizon' bars
-        # This better captures if price goes up at any point within horizon
+    # Calculate future returns
+    future_close = df['close'].shift(-horizon)
+    close_returns = (future_close / df['close']) - 1
+    
+    if target_type == 'multiclass':
+        # 3-class labeling: WAIT(0), LONG(1), SHORT(2)
+        # Calculate max upside and max downside within horizon
+        future_highs = df['high'].shift(-1).rolling(window=horizon, min_periods=1).max()
+        future_lows = df['low'].shift(-1).rolling(window=horizon, min_periods=1).min()
+        
+        max_upside = (future_highs.shift(1-horizon) / df['close']) - 1
+        max_downside = (df['close'] / future_lows.shift(1-horizon)) - 1
+        
+        # Initialize as WAIT (0)
+        target = pd.Series(0, index=df.index)
+        
+        # LONG (1): Price goes up >= threshold AND closes higher
+        long_condition = (max_upside >= threshold) & (close_returns > 0)
+        target.loc[long_condition] = 1
+        
+        # SHORT (2): Price goes down >= threshold AND closes lower
+        short_condition = (max_downside >= threshold) & (close_returns < 0)
+        target.loc[short_condition] = 2
+        
+        return target.astype(int)
+    
+    elif use_max_return and target_type == 'binary':
+        # Binary: LONG(1) vs WAIT(0)
         future_highs = df['high'].shift(-1).rolling(window=horizon, min_periods=1).max()
         max_returns = (future_highs.shift(1-horizon) / df['close']) - 1
         
-        # Also calculate close-to-close return for confirmation
-        future_close = df['close'].shift(-horizon)
-        close_returns = (future_close / df['close']) - 1
-        
-        # Label = 1 if BOTH conditions met:
-        # 1. Max potential return >= threshold (opportunity existed)
-        # 2. Close return is positive (trend was bullish)
         target = ((max_returns >= threshold) & (close_returns > 0)).astype(int)
     else:
         # Simple close-to-close return
-        future_returns = df['close'].shift(-horizon) / df['close'] - 1
-        
         if target_type == 'binary':
-            target = (future_returns > threshold).astype(int)
+            target = (close_returns > threshold).astype(int)
         else:
-            target = future_returns
+            target = close_returns
     
     return target
 

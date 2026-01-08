@@ -280,26 +280,32 @@ class TrainedModelPredictor:
             pred = self.xgb_model.predict(X)
             pred_class = int(pred[0])
             
-            # Get probabilities with professional calibration
-            if hasattr(self.xgb_model, 'predict_proba'):
-                probs = self.xgb_model.predict_proba(X)
-                raw_conf = float(probs.max())
+            # Get probabilities for multiclass (3 classes: WAIT=0, LONG=1, SHORT=2)
+            try:
+                # For multiclass, predict_proba returns shape (n_samples, n_classes)
+                probs = self.xgb_model.model.predict_proba(X)
+                
+                if len(probs.shape) == 2 and probs.shape[1] >= 3:
+                    # Multiclass: get probability of predicted class
+                    raw_conf = float(probs[0, pred_class])
+                else:
+                    # Binary fallback
+                    prob_class1 = float(probs[0]) if probs.ndim == 1 else float(probs[0, 1])
+                    raw_conf = prob_class1 if pred_class == 1 else (1.0 - prob_class1)
                 
                 # Professional Confidence Calibration
-                # Raw XGBoost probabilities are often conservative (0.5-0.7)
-                # Scale to meaningful confidence range using sigmoid-like transform
-                # If raw_conf >= 0.5 (correct prediction), boost confidence
                 if raw_conf >= 0.5:
                     # Scale [0.5, 1.0] → [0.55, 0.90]
                     confidence = 0.55 + (raw_conf - 0.5) * 0.7
                 else:
-                    # Scale [0.0, 0.5] → [0.30, 0.55]
-                    confidence = 0.30 + raw_conf * 0.5
+                    confidence = 0.50
                 
-                # Apply model accuracy boost (XGBoost has 68.2% accuracy)
+                # Apply model accuracy boost
                 confidence = min(0.90, confidence * 1.05)
-            else:
-                confidence = 0.68  # Based on training accuracy
+                
+            except Exception as e:
+                logger.debug(f"Proba extraction error: {e}")
+                confidence = 0.65  # Default
             
             return pred_class, confidence
             

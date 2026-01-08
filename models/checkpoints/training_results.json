@@ -1,45 +1,35 @@
 {
-  "timestamp": "2026-01-07T19:22:45.289541",
+  "timestamp": "2026-01-08T05:55:01.589560",
   "metrics": {
-    "xgboost": {
-      "accuracy": 0.774476822928044,
-      "precision": 0.6664117968323321,
-      "recall": 0.743208673407236,
-      "f1": 0.702718267680258
+    "lstm": {
+      "accuracy": 0.44297070578418024,
+      "precision": 0.29291664601205053,
+      "recall": 0.4220434664119564,
+      "f1": 0.34542333433061906
     }
   },
-  "best_params": {
-    "xgboost": {
-      "n_estimators": 500,
-      "max_depth": 6,
-      "learning_rate": 0.05,
-      "subsample": 0.8,
-      "colsample_bytree": 0.8,
-      "early_stopping_rounds": 50,
-      "scale_pos_weight": 2.238947176905816
-    }
-  },
+  "best_params": {},
   "n_features": 50,
   "selected_features": [
     "hour",
     "trend_10",
     "hour_sin",
-    "cum_returns_5",
-    "trend_5",
+    "close_std_5",
+    "range_pct",
     "range_pct_lag_1",
+    "cum_returns_5",
+    "close_std_10",
+    "high_low_ratio",
+    "atr_pct_7",
     "returns",
     "range_pct_lag_2",
-    "range_pct",
-    "atr_pct_7",
-    "close_std_5",
     "range_pct_lag_3",
-    "returns_kurt_20",
-    "range",
-    "roc_10",
-    "bb_lower_20",
+    "trend_5",
+    "roc_5",
+    "hour_cos",
+    "returns_skew_20",
     "returns_lag_5",
-    "bb_width_20",
-    "cum_returns_2",
-    "returns_skew_10"
+    "roc_10",
+    "range"
   ]
 }

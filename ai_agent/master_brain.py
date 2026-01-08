@@ -470,6 +470,36 @@ class MasterBrain:
         self.active_positions: Dict[int, Dict] = {}  # ticket: {entry, sl, tp, partial_closed}
         
         # ============================================
+        # v3.4: Advanced Intelligence Systems
+        # ============================================
+        
+        # Pattern Memory - จดจำ patterns ที่ชนะ/แพ้
+        self.winning_patterns: List[Dict] = []  # patterns ที่ชนะบ่อย
+        self.losing_patterns: List[Dict] = []   # patterns ที่แพ้บ่อย (หลีกเลี่ยง)
+        
+        # Bad Situation Filter - สถานการณ์ที่ควรหลีกเลี่ยง
+        self.bad_situations: Dict[str, Dict] = {}  # {situation_key: {count, total_loss}}
+        self.avoid_threshold = 3  # หลีกเลี่ยงหลังแพ้ 3 ครั้ง
+        
+        # Self-Reflection - วิเคราะห์ตัวเอง
+        self.reflection_interval = 20  # วิเคราะห์ทุก 20 trades
+        self.trades_since_reflection = 0
+        self.reflection_insights: List[str] = []  # บทเรียนที่เรียนรู้
+        
+        # Adaptive Confidence - ปรับ confidence ตามประสบการณ์
+        self.regime_confidence: Dict[str, float] = {}  # {regime: win_rate}
+        self.hour_confidence: Dict[int, float] = {}    # {hour: win_rate}
+        self.volatility_confidence: Dict[str, float] = {}  # {vol_level: win_rate}
+        
+        # Contrarian Detection - จับสัญญาณ contrarian
+        self.contrarian_success_rate = 0.5
+        self.contrarian_trades = 0
+        
+        # Recent Performance Window
+        self.recent_trades_window = 10
+        self.recent_trades: deque = deque(maxlen=self.recent_trades_window)
+        
+        # ============================================
         # v3.1: MT5 Direct Control
         # ============================================
         self.mt5_connected = False
@@ -492,7 +522,7 @@ class MasterBrain:
         self.auto_save_interval = 10  # Save every N trades
         self.trades_since_save = 0
         
-        logger.info(f"🧠 MasterBrain v3.2 initialized - Learned Risk | Trailing | MT5 Control | Auto-Save | Memory: {memory_size}")
+        logger.info(f"🧠 MasterBrain v3.4 (Enhanced Intelligence) - Pattern Memory | Smart Filter | Self-Reflection | Memory: {memory_size}")
     
     def _init_db(self):
         """v3.2: Initialize SQLite database connection"""
@@ -1788,8 +1818,20 @@ class MasterBrain:
         action: str,
         result: str,
         pnl: float,
+        entry_features: np.ndarray = None,
+        ticket: int = None,
     ):
-        """บันทึกผลและเรียนรู้"""
+        """
+        บันทึกผลและเรียนรู้ (v3.3 Enhanced Learning)
+        
+        Args:
+            market_state: สถานะตลาดตอน entry
+            action: "LONG", "SHORT", "WAIT"
+            result: "win" or "loss"
+            pnl: กำไร/ขาดทุน
+            entry_features: features ที่ใช้ตอน entry (สำหรับ LSTM/XGBoost learning)
+            ticket: MT5 ticket number
+        """
         
         # Determine lesson
         if result == 'win' and self.current_view and self.current_view.override_models:
@@ -1811,7 +1853,7 @@ class MasterBrain:
         self.trade_memory.append(memory)
         
         # ============================================
-        # v3.1: Learn from experience
+        # v3.3: Enhanced Learning from BOTH wins AND losses
         # ============================================
         
         # Update streak
@@ -1831,6 +1873,13 @@ class MasterBrain:
         # Learn optimal SL/TP from results
         self._learn_from_trade(market_state, result, pnl)
         
+        # Update hourly performance
+        current_hour = datetime.now().hour
+        self.record_hourly_performance(current_hour, pnl, result == 'win')
+        
+        # Update daily tracking
+        self.record_daily_trade(pnl)
+        
         # Update override win rate
         if self.current_view and self.current_view.override_models:
             override_trades = [
@@ -1841,20 +1890,51 @@ class MasterBrain:
                 wins = len([t for t in override_trades if t.result == 'win'])
                 self.override_win_rate = wins / len(override_trades)
         
-        # Add to training buffer for ML
+        # ============================================
+        # v3.3: Learn from BOTH wins AND losses
+        # ============================================
         features = self._extract_features(market_state)
-        action_idx = {'WAIT': 0, 'LONG': 1, 'CLOSE': 2}.get(action, 0)
-        label = 1 if result == 'win' else 0  # Win = correct, Loss = incorrect
+        action_idx = {'WAIT': 0, 'LONG': 1, 'SHORT': 2, 'CLOSE': 2}.get(action, 0)
         
-        if label == 1:  # Only learn from wins
+        if result == 'win':
+            # WIN: เรียนรู้ว่า action นี้ถูกต้อง
             self.training_buffer.append((features, action_idx))
+            logger.debug(f"📚 เรียนรู้จาก WIN: {action} → ถูกต้อง")
+        else:
+            # LOSS: เรียนรู้ว่าควร WAIT ในสถานการณ์นี้
+            # สอนว่าอะไรไม่ควรทำ
+            self.training_buffer.append((features, 0))  # 0 = WAIT
+            
+            # เพิ่มน้ำหนักให้ losses (เรียนรู้ 2 เท่า)
+            self.training_buffer.append((features, 0))
+            
+            logger.debug(f"📚 เรียนรู้จาก LOSS: {action} → ควร WAIT")
         
-        # Train ML if enough data
+        # ============================================
+        # v3.3: Update Model Accuracy Tracking
+        # ============================================
+        prediction_correct = result == 'win'
+        
+        # Update LSTM accuracy if available
+        if hasattr(self, 'model_accuracy'):
+            # Determine which model made this prediction
+            if self.current_view:
+                if self.current_view.override_models:
+                    model_name = 'master'
+                else:
+                    # Assume LSTM/XGBoost made the call
+                    self.update_model_accuracy('lstm', action, action if result == 'win' else 'WAIT')
+                    self.update_model_accuracy('xgboost', action, action if result == 'win' else 'WAIT')
+        
+        # Train Transformer if enough data
         if len(self.training_buffer) >= self.min_samples_to_train:
             self._train_network()
         
+        # Auto-save check
+        self._auto_save_check()
+        
         streak_info = f"+{self.current_streak}W" if self.current_streak > 0 else f"{self.current_streak}L"
-        logger.debug(f"📝 Recorded: {action} → {result}, Streak: {streak_info}, Lesson: {lesson}")
+        logger.info(f"📝 บันทึก: {action} → {'✅ WIN' if result == 'win' else '❌ LOSS'} ${pnl:.2f} | Streak: {streak_info}")
     
     def _learn_from_trade(
         self,
@@ -2248,16 +2328,322 @@ class MasterBrain:
                 self.total_decisions = state.get('total_decisions', 0)
                 self.override_win_rate = state.get('override_win_rate', 0.5)
                 
-                logger.info(f"📂 MasterBrain v3.3 loaded from DB: {self.total_decisions} decisions")
+                # Load v3.4 intelligence data
+                if 'bad_situations' in state:
+                    self.bad_situations = state['bad_situations']
+                if 'regime_confidence' in state:
+                    self.regime_confidence = state['regime_confidence']
+                if 'reflection_insights' in state:
+                    self.reflection_insights = state['reflection_insights']
+                
+                logger.info(f"📂 MasterBrain v3.4 loaded from DB: {self.total_decisions} decisions")
         except Exception as e:
             logger.debug(f"Could not load from SQLite: {e}")
         
-        logger.info(f"📂 MasterBrain v3.3 loaded (Acc: {self.ml_accuracy:.1%})")
+        logger.info(f"📂 MasterBrain v3.4 loaded (Acc: {self.ml_accuracy:.1%})")
+    
+    # ============================================
+    # v3.4: Advanced Intelligence Methods
+    # ============================================
+    
+    def smart_should_trade(
+        self,
+        regime: str,
+        volatility: float,
+        hour: int,
+        trend: float,
+        rsi: float = 50.0,
+        confidence: float = 0.5,
+    ) -> Tuple[bool, str]:
+        """
+        ตรวจสอบอย่างฉลาดว่าควรเทรดหรือไม่
+        
+        ใช้ประสบการณ์ทั้งหมดที่เรียนรู้มา:
+        - Pattern Memory
+        - Bad Situation Filter
+        - Adaptive Confidence
+        - Recent Performance
+        """
+        
+        reasons = []
+        
+        # 1. Check bad situations (สถานการณ์ที่เคยแพ้บ่อย)
+        situation_key = self._get_situation_key(regime, volatility, hour)
+        if self._is_bad_situation(situation_key):
+            return False, f"🚫 หลีกเลี่ยง: สถานการณ์นี้เคยแพ้หลายครั้ง ({situation_key})"
+        
+        # 2. Check regime confidence (win rate ใน regime นี้)
+        regime_conf = self.regime_confidence.get(regime, 0.5)
+        if regime_conf < 0.35:
+            reasons.append(f"⚠️ Regime '{regime}' มี win rate ต่ำ ({regime_conf:.0%})")
+        
+        # 3. Check hour confidence (win rate ในชั่วโมงนี้)
+        hour_conf = self.hour_confidence.get(hour, 0.5)
+        if hour_conf < 0.35:
+            reasons.append(f"⚠️ Hour {hour} มี win rate ต่ำ ({hour_conf:.0%})")
+        
+        # 4. Check recent performance
+        recent_win_rate = self._get_recent_win_rate()
+        if recent_win_rate < 0.30:
+            reasons.append(f"⚠️ กำลังขาดทุนต่อเนื่อง (WR: {recent_win_rate:.0%})")
+        
+        # 5. Check volatility confidence
+        vol_level = "high" if volatility > 0.02 else "low" if volatility < 0.005 else "normal"
+        vol_conf = self.volatility_confidence.get(vol_level, 0.5)
+        if vol_conf < 0.35:
+            reasons.append(f"⚠️ Volatility {vol_level} มี win rate ต่ำ")
+        
+        # 6. Check RSI extremes from experience
+        if rsi > 80 or rsi < 20:
+            # Check if we've done well in extremes
+            extreme_key = f"rsi_{'overbought' if rsi > 80 else 'oversold'}"
+            if extreme_key in self.bad_situations:
+                reasons.append(f"⚠️ RSI extreme มักแพ้")
+        
+        # 7. Check streak
+        if self.current_streak <= -3:
+            reasons.append(f"⛔ ขาดทุนติดต่อ {abs(self.current_streak)} ครั้ง - ควรรอ")
+            return False, " | ".join(reasons)
+        
+        # 8. Check daily limit
+        if self.is_daily_limit_hit:
+            return False, "🛑 ถึงขีดจำกัดขาดทุนรายวัน"
+        
+        # 9. Check recovery mode
+        if self.in_recovery_mode and confidence < 0.7:
+            reasons.append("⚠️ อยู่ใน Recovery Mode - ต้องมั่นใจสูงกว่านี้")
+        
+        # Calculate overall smart confidence
+        adjusted_confidence = self._get_adaptive_confidence(
+            base_confidence=confidence,
+            regime=regime,
+            hour=hour,
+            volatility=volatility,
+        )
+        
+        # Decision
+        if adjusted_confidence < 0.5:
+            return False, f"❌ Confidence ต่ำเกินไป ({adjusted_confidence:.0%}) - รอ setup ที่ดีกว่า"
+        
+        if len(reasons) >= 3:
+            return False, "❌ มีสัญญาณเตือนหลายอย่าง: " + " | ".join(reasons)
+        
+        if reasons:
+            return True, "✅ เทรดได้ (มีข้อระวัง): " + " | ".join(reasons)
+        
+        return True, f"✅ สถานการณ์ดี! Confidence: {adjusted_confidence:.0%}"
+    
+    def _get_situation_key(self, regime: str, volatility: float, hour: int) -> str:
+        """สร้าง key สำหรับระบุสถานการณ์"""
+        vol_level = "high" if volatility > 0.02 else "low" if volatility < 0.005 else "mid"
+        session = "asia" if 0 <= hour < 8 else "london" if 8 <= hour < 16 else "ny"
+        return f"{regime}_{vol_level}_{session}"
+    
+    def _is_bad_situation(self, situation_key: str) -> bool:
+        """ตรวจสอบว่าเป็นสถานการณ์ที่ควรหลีกเลี่ยงหรือไม่"""
+        if situation_key in self.bad_situations:
+            data = self.bad_situations[situation_key]
+            # หลีกเลี่ยงถ้าแพ้มากกว่า threshold
+            if data.get('losses', 0) >= self.avoid_threshold:
+                win_rate = data.get('wins', 0) / max(1, data.get('losses', 0) + data.get('wins', 0))
+                if win_rate < 0.35:
+                    return True
+        return False
+    
+    def _record_situation(self, situation_key: str, is_win: bool, pnl: float):
+        """บันทึกผลลัพธ์ของสถานการณ์"""
+        if situation_key not in self.bad_situations:
+            self.bad_situations[situation_key] = {'wins': 0, 'losses': 0, 'total_pnl': 0}
+        
+        if is_win:
+            self.bad_situations[situation_key]['wins'] += 1
+        else:
+            self.bad_situations[situation_key]['losses'] += 1
+        
+        self.bad_situations[situation_key]['total_pnl'] += pnl
+    
+    def _get_recent_win_rate(self) -> float:
+        """คำนวณ win rate ล่าสุด"""
+        if not self.recent_trades:
+            return 0.5
+        wins = sum(1 for t in self.recent_trades if t.get('is_win', False))
+        return wins / len(self.recent_trades)
+    
+    def _get_adaptive_confidence(
+        self,
+        base_confidence: float,
+        regime: str,
+        hour: int,
+        volatility: float,
+    ) -> float:
+        """ปรับ confidence ตามประสบการณ์"""
+        
+        adjusted = base_confidence
+        
+        # Adjust by regime confidence
+        regime_conf = self.regime_confidence.get(regime, 0.5)
+        if regime_conf > 0.6:
+            adjusted += 0.05
+        elif regime_conf < 0.4:
+            adjusted -= 0.10
+        
+        # Adjust by hour confidence
+        hour_conf = self.hour_confidence.get(hour, 0.5)
+        if hour_conf > 0.6:
+            adjusted += 0.05
+        elif hour_conf < 0.4:
+            adjusted -= 0.10
+        
+        # Adjust by recent performance
+        recent_wr = self._get_recent_win_rate()
+        if recent_wr > 0.6:
+            adjusted += 0.05
+        elif recent_wr < 0.4:
+            adjusted -= 0.10
+        
+        # Adjust by current streak
+        if self.current_streak > 0:
+            adjusted += min(0.10, self.current_streak * 0.02)
+        elif self.current_streak < 0:
+            adjusted -= min(0.15, abs(self.current_streak) * 0.03)
+        
+        return max(0.1, min(0.95, adjusted))
+    
+    def self_reflect(self) -> List[str]:
+        """
+        วิเคราะห์ตัวเองและสร้าง insights
+        
+        Returns:
+            List of insights/lessons learned
+        """
+        insights = []
+        
+        if len(self.trade_memory) < 20:
+            return ["ยังมีข้อมูลไม่พอสำหรับการวิเคราะห์"]
+        
+        # Analyze recent performance
+        recent = list(self.trade_memory)[-50:]
+        wins = [t for t in recent if t.result == 'win']
+        losses = [t for t in recent if t.result == 'loss']
+        
+        if len(recent) > 0:
+            win_rate = len(wins) / len(recent)
+            
+            if win_rate < 0.4:
+                insights.append(f"⚠️ Win rate ต่ำ ({win_rate:.0%}) - ควรเลือก trade ดีกว่านี้")
+            elif win_rate > 0.6:
+                insights.append(f"✅ Win rate ดี ({win_rate:.0%}) - รักษาระดับนี้ไว้")
+        
+        # Analyze by regime
+        regime_results = {}
+        for t in recent:
+            regime = t.market_state.get('regime', 'unknown')
+            if regime not in regime_results:
+                regime_results[regime] = {'wins': 0, 'losses': 0}
+            if t.result == 'win':
+                regime_results[regime]['wins'] += 1
+            else:
+                regime_results[regime]['losses'] += 1
+        
+        for regime, data in regime_results.items():
+            total = data['wins'] + data['losses']
+            if total >= 5:
+                wr = data['wins'] / total
+                self.regime_confidence[regime] = wr
+                
+                if wr < 0.35:
+                    insights.append(f"❌ แพ้บ่อยใน {regime} (WR: {wr:.0%}) - ควรหลีกเลี่ยง")
+                elif wr > 0.65:
+                    insights.append(f"💪 ชนะบ่อยใน {regime} (WR: {wr:.0%}) - เน้น regime นี้")
+        
+        # Analyze by hour
+        hour_results = {}
+        for t in recent:
+            hour = t.timestamp.hour
+            if hour not in hour_results:
+                hour_results[hour] = {'wins': 0, 'losses': 0}
+            if t.result == 'win':
+                hour_results[hour]['wins'] += 1
+            else:
+                hour_results[hour]['losses'] += 1
+        
+        for hour, data in hour_results.items():
+            total = data['wins'] + data['losses']
+            if total >= 3:
+                wr = data['wins'] / total
+                self.hour_confidence[hour] = wr
+                
+                if wr < 0.30:
+                    insights.append(f"⏰ ชั่วโมง {hour} มักแพ้ (WR: {wr:.0%}) - หลีกเลี่ยง")
+        
+        # Analyze consecutive losses
+        if self.max_loss_streak >= 3:
+            insights.append(f"📉 เคยขาดทุนติดต่อ {self.max_loss_streak} ครั้ง - ควรลด position size เมื่อเริ่มแพ้")
+        
+        # Store insights
+        self.reflection_insights = insights
+        self.trades_since_reflection = 0
+        
+        logger.info(f"🔍 Self-Reflection: {len(insights)} insights")
+        for insight in insights:
+            logger.info(f"   {insight}")
+        
+        return insights
+    
+    def get_reflection_insights(self) -> List[str]:
+        """ดึง insights ล่าสุด"""
+        return self.reflection_insights
+    
+    def record_trade_for_learning(
+        self,
+        regime: str,
+        volatility: float,
+        hour: int,
+        is_win: bool,
+        pnl: float,
+    ):
+        """บันทึก trade สำหรับระบบ intelligence"""
+        
+        # Record to recent trades
+        self.recent_trades.append({
+            'regime': regime,
+            'volatility': volatility,
+            'hour': hour,
+            'is_win': is_win,
+            'pnl': pnl,
+            'timestamp': datetime.now(),
+        })
+        
+        # Record situation
+        situation_key = self._get_situation_key(regime, volatility, hour)
+        self._record_situation(situation_key, is_win, pnl)
+        
+        # Update confidence
+        if regime not in self.regime_confidence:
+            self.regime_confidence[regime] = 0.5
+        
+        # Exponential moving average update
+        alpha = 0.1
+        self.regime_confidence[regime] = (
+            (1 - alpha) * self.regime_confidence.get(regime, 0.5) +
+            alpha * (1.0 if is_win else 0.0)
+        )
+        
+        # Update hour confidence
+        self.hour_confidence[hour] = (
+            (1 - alpha) * self.hour_confidence.get(hour, 0.5) +
+            alpha * (1.0 if is_win else 0.0)
+        )
+        
+        # Trigger self-reflection periodically
+        self.trades_since_reflection += 1
+        if self.trades_since_reflection >= self.reflection_interval:
+            self.self_reflect()
     
     def get_status(self) -> Dict[str, Any]:
         """ดึงสถานะปัจจุบัน"""
         return {
-            "version": "3.1",
+            "version": "3.4",
             "total_decisions": self.total_decisions,
             "override_count": self.override_count,
             "override_rate": self.override_count / max(1, self.total_decisions),
@@ -2275,6 +2661,10 @@ class MasterBrain:
             "has_vector_memory": True,
             "has_adaptive_risk": True,
             "has_mtf_fusion": True,
+            "has_intelligence": True,
+            "bad_situations_tracked": len(self.bad_situations),
+            "reflection_insights": len(self.reflection_insights),
+            "recent_win_rate": self._get_recent_win_rate(),
             "current_view": self.current_view,
         }
 
@@ -2389,4 +2779,23 @@ if __name__ == "__main__":
     
     plan = brain.plan_trade(market, indicators, tf_data)
     print(f"\n{plan['thinking']}")
-
+    
+    # Test Intelligence Systems
+    print("\n" + "="*60)
+    print("   v3.4 INTELLIGENCE SYSTEMS TEST")
+    print("="*60)
+    
+    # Test pattern recognition
+    can_trade, reason = brain.smart_should_trade(
+        regime='ranging',
+        volatility=0.02,
+        hour=14,
+        trend=0.1,
+        rsi=55.0,
+    )
+    print(f"\n   Smart Should Trade: {can_trade}")
+    print(f"   Reason: {reason}")
+    
+    # Test self-reflection
+    insights = brain.get_reflection_insights()
+    print(f"   Reflection Insights: {len(insights)}")
