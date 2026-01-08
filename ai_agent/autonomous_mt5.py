@@ -273,14 +273,31 @@ class AutonomousMT5Trader:
                 sl=sl,
                 tp=tp,
                 confidence=0.7,
+                ticket=result.order,
             )
         except Exception as e:
             logger.debug(f"Telegram alert failed: {e}")
+        
+        # v3.4: Track position for SL/TP detection
+        try:
+            if hasattr(self, '_trade_executor'):
+                self._trade_executor.track_position(
+                    ticket=result.order,
+                    symbol=self.symbol,
+                    direction=order_type,
+                    entry_price=result.price,
+                    volume=lot,
+                    sl=sl,
+                    tp=tp,
+                )
+        except Exception as e:
+            logger.debug(f"Position tracking failed: {e}")
         
         return {
             "success": True,
             "order_id": result.order,
             "price": result.price,
+            "ticket": result.order,
         }
     
     def close_trade(self) -> Dict:
@@ -473,6 +490,57 @@ class AutonomousMT5Trader:
         except Exception as e:
             pass  # Silent fail - don't break main loop
     
+    def _check_sl_tp_hits(self):
+        """
+        v3.4: ตรวจสอบ SL/TP hits และส่ง Telegram แจ้งเตือน
+        
+        เรียกทุก iteration เพื่อตรวจจับว่า positions ถูกปิดโดย SL หรือ TP
+        """
+        if self.paper_trading or not MT5_AVAILABLE:
+            return  # Paper trading ไม่ต้องเช็ค
+        
+        try:
+            # Import MT5 trade executor for checking
+            from mt5_trade_executor import MT5TradeExecutor
+            
+            # Create executor if not exists
+            if not hasattr(self, '_trade_executor'):
+                self._trade_executor = MT5TradeExecutor(master_brain=self.ai.master_brain)
+                
+                # Track all open positions
+                positions = mt5.positions_get()
+                if positions:
+                    for pos in positions:
+                        self._trade_executor.track_position(
+                            ticket=pos.ticket,
+                            symbol=pos.symbol,
+                            direction="BUY" if pos.type == 0 else "SELL",
+                            entry_price=pos.price_open,
+                            volume=pos.volume,
+                            sl=pos.sl,
+                            tp=pos.tp,
+                        )
+            
+            # Check for closed positions
+            closed = self._trade_executor.check_closed_positions_and_notify()
+            
+            if closed:
+                for close_info in closed:
+                    close_reason = close_info.get('close_reason', 'unknown')
+                    pnl = close_info.get('pnl', 0)
+                    
+                    # Log the closure
+                    emoji = "🛑" if close_reason == "sl" else "🎯" if close_reason == "tp" else "📤"
+                    logger.info(f"{emoji} Position #{close_info['ticket']} closed by {close_reason.upper()} | P&L: ${pnl:.2f}")
+                    
+                    # Update stats
+                    self.daily_pnl += pnl
+                    
+        except ImportError:
+            pass  # Trade executor not available
+        except Exception as e:
+            logger.debug(f"SL/TP check error: {e}")
+    
     def run(
         self,
         interval_seconds: int = 120,  # 2 minutes (changed from 5)
@@ -509,6 +577,11 @@ class AutonomousMT5Trader:
                 iteration += 1
                 
                 logger.info(f"\n--- Iteration {iteration} | {datetime.now().strftime('%H:%M:%S')} ---")
+                
+                # ============================================
+                # v3.4: Check for SL/TP hits and send alerts
+                # ============================================
+                self._check_sl_tp_hits()
                 
                 # Check and execute
                 result = self.check_and_execute()
