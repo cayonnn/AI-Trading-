@@ -199,6 +199,12 @@ class LSTMModel(nn.Module):
         Returns:
             Model output (and attention weights if requested)
         """
+        # v3.4: Clamp input to prevent extreme values
+        x = torch.clamp(x, min=-100.0, max=100.0)
+        
+        # Replace NaN/Inf with zeros
+        x = torch.nan_to_num(x, nan=0.0, posinf=100.0, neginf=-100.0)
+        
         # LSTM forward
         lstm_out, (h_n, c_n) = self.lstm(x)
         
@@ -215,6 +221,10 @@ class LSTMModel(nn.Module):
         
         # Output layer
         output = self.fc(context)
+        
+        # v3.4: Clamp raw output to prevent extreme logits
+        output = torch.clamp(output, min=-10.0, max=10.0)
+        
         output = self.output_activation(output)
         
         if return_attention and attention_weights is not None:
@@ -414,34 +424,52 @@ class LSTMPredictor:
                 batch_X = batch_X.to(self.device)
                 batch_y = batch_y.to(self.device)
                 
+                # v3.4: Normalize input per batch for stability
+                batch_mean = batch_X.mean()
+                batch_std = batch_X.std() + 1e-8
+                if batch_std > 100:  # Only normalize if values are large
+                    batch_X = (batch_X - batch_mean) / batch_std
+                
                 # Forward pass
                 self.optimizer.zero_grad()
                 outputs = self.model(batch_X)
                 
+                # v3.4: Clamp outputs to prevent extreme loss values
+                outputs = torch.clamp(outputs, min=-10.0, max=10.0)
+                
                 # For BCEWithLogitsLoss, we need raw logits
                 if self.use_logits:
-                    # Remove sigmoid from model output for loss calculation
                     loss = self.criterion(outputs, batch_y)
-                    # Apply sigmoid for accuracy calculation
                     probs = torch.sigmoid(outputs)
                 else:
                     loss = self.criterion(outputs, batch_y)
                     probs = outputs
                 
-                # Check for NaN/Inf loss (prevents exploding gradients)
-                if torch.isnan(loss) or torch.isinf(loss):
-                    logger.warning(f"NaN/Inf loss detected, skipping batch")
+                # v3.4: Critical - Check for abnormal loss (negative or exploding)
+                loss_value = loss.item()
+                if torch.isnan(loss) or torch.isinf(loss) or loss_value < -10.0 or loss_value > 100.0:
+                    logger.warning(f"Abnormal loss detected ({loss_value:.2f}), skipping batch")
                     continue
                 
                 # Backward pass
                 loss.backward()
                 
-                # Strong gradient clipping to prevent explosion
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                # v3.4: Very aggressive gradient clipping
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.1)
+                
+                # v3.4: Check for exploding gradients
+                total_grad_norm = 0.0
+                for p in self.model.parameters():
+                    if p.grad is not None:
+                        total_grad_norm += p.grad.data.norm(2).item() ** 2
+                total_grad_norm = total_grad_norm ** 0.5
+                
+                if total_grad_norm > 10.0:
+                    logger.debug(f"Large gradient norm: {total_grad_norm:.2f}, clipping applied")
                 
                 self.optimizer.step()
                 
-                train_loss += loss.item() * batch_X.size(0)
+                train_loss += loss_value * batch_X.size(0)
                 
                 # Calculate accuracy for classification
                 if self.task == 'classification':

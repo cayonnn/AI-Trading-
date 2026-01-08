@@ -387,6 +387,16 @@ class AdvancedModelTrainer:
         val_scaled = self.scaler.transform(val_features)
         test_scaled = self.scaler.transform(test_features)
         
+        # v3.4: Clip scaled values to prevent extreme inputs
+        train_scaled = np.clip(train_scaled, -10, 10)
+        val_scaled = np.clip(val_scaled, -10, 10)
+        test_scaled = np.clip(test_scaled, -10, 10)
+        
+        # v3.4: Replace NaN/Inf with 0
+        train_scaled = np.nan_to_num(train_scaled, nan=0, posinf=10, neginf=-10)
+        val_scaled = np.nan_to_num(val_scaled, nan=0, posinf=10, neginf=-10)
+        test_scaled = np.nan_to_num(test_scaled, nan=0, posinf=10, neginf=-10)
+        
         # Save scaler
         scaler_path = f"{self.checkpoint_dir}/scaler.joblib"
         joblib.dump(self.scaler, scaler_path)
@@ -427,8 +437,8 @@ class AdvancedModelTrainer:
                 # Class 0 is minority - use balanced weight
                 class_weight = 1.0
             
-            # Safety: clip to reasonable range to prevent numerical instability
-            class_weight = min(max(class_weight, 0.5), 10.0)
+            # v3.4: Safety: clip to tighter range to prevent numerical instability
+            class_weight = min(max(class_weight, 0.8), 3.0)  # Reduced from 10.0
         else:
             class_weight = 1.0
             
@@ -442,7 +452,7 @@ class AdvancedModelTrainer:
             num_layers=3,       # UPGRADED: 2 → 3
             dropout=0.3,
             task='classification',
-            learning_rate=0.0003,  # Slightly lower for larger model
+            learning_rate=0.0001,  # v3.4: REDUCED from 0.0003 to prevent explosion
             class_weight=class_weight,
             bidirectional=True,
             use_attention=True
