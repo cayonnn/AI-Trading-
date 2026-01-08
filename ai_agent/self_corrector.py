@@ -60,7 +60,7 @@ class AdaptiveParameters:
     
     # Trade filters
     min_rr_ratio: float = 2.0
-    min_trend_strength: float = 0.005
+    min_trend_strength: float = 0.001  # v3.4: Reduced from 0.005 (allows ranging trades)
     max_volatility: float = 0.025
     
     # Time-based
@@ -228,9 +228,13 @@ class SelfCorrector:
         if not self.params.ranging_allowed and regime == "ranging":
             return False, "Ranging market not allowed"
         
-        # Check trend strength
-        if abs(trend) < self.params.min_trend_strength:
-            return False, f"Trend {trend:.3f} too weak"
+        # v3.4: Trend check is regime-aware
+        # - For trending regimes: require some trend alignment
+        # - For ranging regimes: trend doesn't matter (we're mean-reverting)
+        if regime in ["trending_up", "trending_down"]:
+            if abs(trend) < self.params.min_trend_strength:
+                return False, f"Trend {trend:.3f} too weak for trending regime"
+        # For ranging regime, skip trend check - low trend is expected
         
         # Check from error analyzer as well
         skip, reason = self.error_analyzer.should_skip_trade(
